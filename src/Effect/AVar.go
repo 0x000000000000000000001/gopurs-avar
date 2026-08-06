@@ -1,43 +1,52 @@
-import "sync"
+import (
+	"fmt"
+	"sync"
+	"gopurs/output/gopurs_runtime"
+)
 
 type putEntry struct {
-	val interface{}
-	cb  func(interface{}) interface{}
+	val gopurs_runtime.Value
+	cb  gopurs_runtime.Value
+}
+
+func unboxAVar(avar gopurs_runtime.Value) *AVarImpl {
+	val := avar.AnyVal()
+	if av, ok := val.(*AVarImpl); ok {
+		return av
+	}
+	panic(fmt.Sprintf("AVar AnyVal is not AVarImpl: %T (value: %#v)", val, val))
 }
 
 type AVarImpl struct {
 	mu      sync.Mutex
 	isEmpty bool
 	killed  bool
-	err     interface{}
-	val     interface{}
-	takes   []func(interface{}) interface{}
-	reads   []func(interface{}) interface{}
+	err     gopurs_runtime.Value
+	val     gopurs_runtime.Value
+	takes   []gopurs_runtime.Value
+	reads   []gopurs_runtime.Value
 	puts    []putEntry
 }
 
-func Empty() func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		return &AVarImpl{isEmpty: true}
-	}
+func Empty(_ gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Box(&AVarImpl{isEmpty: true})
 }
 
-func _NewVar(val interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		return &AVarImpl{isEmpty: false, val: val}
-	}
+func _NewVar(val gopurs_runtime.Value, _ gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Box(&AVarImpl{isEmpty: false, val: val})
 }
 
-func _KillVar(err interface{}, avar interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		av := avar.(*AVarImpl)
+func _KillVar(err gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
 		av.mu.Lock()
 		if av.killed {
 			av.mu.Unlock()
-			return nil
+			return gopurs_runtime.Any(nil)
 		}
 		av.killed = true
 		av.err = err
+		av.isEmpty = true
 
 		takes := av.takes
 		reads := av.reads
@@ -49,42 +58,44 @@ func _KillVar(err interface{}, avar interface{}) func(interface{}) interface{} {
 		av.mu.Unlock()
 
 		for _, cb := range takes {
-			go cb(err).(func(interface{}) interface{})(nil) // In PureScript, AVar killed doesn't use Left, it uses an internal error? Wait!
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
 		}
 		for _, cb := range reads {
-			go cb(err).(func(interface{}) interface{})(nil)
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
 		}
 		for _, put := range puts {
-			go put.cb(err).(func(interface{}) interface{})(nil)
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(put.cb, err), gopurs_runtime.Any(nil))
 		}
-		return nil
-	}
+		return gopurs_runtime.Any(nil)
+	})
 }
 
-func _PutVar(left func(interface{}) interface{}, right func(interface{}) interface{}, val interface{}, avar interface{}, cb func(interface{}) interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		av := avar.(*AVarImpl)
+func _PutVar(left gopurs_runtime.Value, right gopurs_runtime.Value, val gopurs_runtime.Value, avar gopurs_runtime.Value, cb gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
 		av.mu.Lock()
 
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			cb(left(e)).(func(interface{}) interface{})(nil)
-			return nil
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		if !av.isEmpty {
 			av.puts = append(av.puts, putEntry{val: val, cb: cb})
 			av.mu.Unlock()
-			return nil
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		av.val = val
 		av.isEmpty = false
 
-		var takeCb func(interface{}) interface{}
+		var takeCb gopurs_runtime.Value
+		var hasTakeCb bool
 		if len(av.takes) > 0 {
 			takeCb = av.takes[0]
+			hasTakeCb = true
 			av.takes = av.takes[1:]
 			av.isEmpty = true
 		}
@@ -94,31 +105,35 @@ func _PutVar(left func(interface{}) interface{}, right func(interface{}) interfa
 		av.mu.Unlock()
 
 		for _, r := range reads {
-			go r(right(val)).(func(interface{}) interface{})(nil)
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(r, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 		}
 
-		if takeCb != nil {
-			go takeCb(right(val)).(func(interface{}) interface{})(nil)
+		if hasTakeCb {
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 		}
-		cb(right(nil)).(func(interface{}) interface{})(nil)
-		return nil
-	}
+		
+		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
+
+		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
+	})
 }
 
-func _TryPutVar(val interface{}, avar interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		av := avar.(*AVarImpl)
+func _TryPutVar(val gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
 		av.mu.Lock()
 		if av.killed || !av.isEmpty {
 			av.mu.Unlock()
-			return false
+			return gopurs_runtime.Box(false)
 		}
 		av.val = val
 		av.isEmpty = false
 
-		var takeCb func(interface{}) interface{}
+		var takeCb gopurs_runtime.Value
+		var hasTakeCb bool
 		if len(av.takes) > 0 {
 			takeCb = av.takes[0]
+			hasTakeCb = true
 			av.takes = av.takes[1:]
 			av.isEmpty = true
 		}
@@ -127,94 +142,145 @@ func _TryPutVar(val interface{}, avar interface{}) func(interface{}) interface{}
 		av.mu.Unlock()
 
 		for _, r := range reads {
-			go r(val).(func(interface{}) interface{})(nil) // wait tryPut returns boolean and fires callbacks. But wait, in tryPut there is NO right/left wrappers!
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(r, val), gopurs_runtime.Any(nil))
 		}
-		if takeCb != nil {
-			go takeCb(val).(func(interface{}) interface{})(nil) // This is wrong if takeCb expects Either. We need to check JS implementation!
+		if hasTakeCb {
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, val), gopurs_runtime.Any(nil))
 		}
-		return true
-	}
+		return gopurs_runtime.Box(true)
+	})
 }
 
-func _TakeVar(left func(interface{}) interface{}, right func(interface{}) interface{}, avar interface{}, cb func(interface{}) interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		av := avar.(*AVarImpl)
+func _TakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs_runtime.Value, cb gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
 		av.mu.Lock()
 
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			cb(left(e)).(func(interface{}) interface{})(nil)
-			return nil
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		if av.isEmpty {
 			av.takes = append(av.takes, cb)
 			av.mu.Unlock()
-			return nil
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		val := av.val
 		av.isEmpty = true
 
-		var putCb func(interface{}) interface{}
+		var putCb gopurs_runtime.Value
+		var hasPutCb bool
 		if len(av.puts) > 0 {
 			put := av.puts[0]
 			av.puts = av.puts[1:]
 			av.val = put.val
 			av.isEmpty = false
 			putCb = put.cb
+			hasPutCb = true
 		}
 
 		av.mu.Unlock()
 
-		if putCb != nil {
-			go putCb(right(nil)).(func(interface{}) interface{})(nil)
+		if hasPutCb {
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
 		}
-		cb(right(val)).(func(interface{}) interface{})(nil)
-		return nil
-	}
+		
+		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+
+		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
+	})
 }
 
-func _TryTakeVar(left func(interface{}) interface{}, right func(interface{}) interface{}, avar interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		panic("Not implemented fully: _tryTakeVar requires Maybe constructors")
-	}
+func _TryTakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, nothing gopurs_runtime.Value, just gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
+		av.mu.Lock()
+
+		if av.isEmpty {
+			av.mu.Unlock()
+			return nothing
+		}
+
+		val := av.val
+		av.isEmpty = true
+
+		var putCb gopurs_runtime.Value
+		var hasPutCb bool
+		if len(av.puts) > 0 {
+			put := av.puts[0]
+			av.puts = av.puts[1:]
+			av.val = put.val
+			av.isEmpty = false
+			putCb = put.cb
+			hasPutCb = true
+		}
+
+		av.mu.Unlock()
+
+		if hasPutCb {
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
+		}
+
+		return gopurs_runtime.Apply(just, val)
+	})
 }
 
-func _ReadVar(left func(interface{}) interface{}, right func(interface{}) interface{}, avar interface{}, cb func(interface{}) interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		av := avar.(*AVarImpl)
+func _ReadVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs_runtime.Value, cb gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
 		av.mu.Lock()
 
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			cb(left(e)).(func(interface{}) interface{})(nil)
-			return nil
+			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		if av.isEmpty {
 			av.reads = append(av.reads, cb)
 			av.mu.Unlock()
-			return nil
+			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
 		val := av.val
 		av.mu.Unlock()
-		cb(right(val)).(func(interface{}) interface{})(nil)
-		return nil
-	}
+		
+		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+
+		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
+	})
 }
 
-func _TryReadVar(avar interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		panic("Not implemented fully: _tryReadVar")
-	}
+func _TryReadVar(nothing gopurs_runtime.Value, just gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
+		av.mu.Lock()
+		defer av.mu.Unlock()
+
+		if av.isEmpty {
+			return nothing
+		}
+		return gopurs_runtime.Apply(just, av.val)
+	})
 }
 
-func _Status(avar interface{}) func(interface{}) interface{} {
-	return func(_ interface{}) interface{} {
-		panic("Not implemented fully: _status")
-	}
+func _Status(killed gopurs_runtime.Value, filled gopurs_runtime.Value, empty gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtime.Value {
+	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+		av := unboxAVar(avar)
+		av.mu.Lock()
+		defer av.mu.Unlock()
+
+		if av.killed {
+			return gopurs_runtime.Apply(killed, av.err)
+		}
+		if av.isEmpty {
+			return empty
+		}
+		return gopurs_runtime.Apply(filled, av.val)
+	})
 }

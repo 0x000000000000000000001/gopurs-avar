@@ -20,7 +20,7 @@ module Effect.AVar
 import Prelude
 import Data.Either (Either(..))
 import Data.Function.Uncurried as Fn
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Exception (Error)
 
@@ -69,7 +69,7 @@ take avar cb = Fn.runFn4 _takeVar Left Right avar cb
 -- | Attempts to synchronously take an AVar value, leaving it empty. If the
 -- | AVar is empty, this will return `Nothing`.
 tryTake :: forall a. AVar a -> Effect (Maybe a)
-tryTake avar = Fn.runFn3 _tryTakeVar Left Right avar
+tryTake avar = Fn.runFn5 _tryTakeVar Left Right Nothing Just avar
 
 -- | Reads the AVar value. Unlike `take`, this will not leave the AVar empty.
 -- | If the AVar is empty, this will queue until it is filled. Multiple reads
@@ -80,11 +80,11 @@ read avar cb = Fn.runFn4 _readVar Left Right avar cb
 -- | Attempts to synchronously read an AVar. If the AVar is empty, this will
 -- | return `Nothing`.
 tryRead :: forall a. AVar a -> Effect (Maybe a)
-tryRead avar = Fn.runFn1 _tryReadVar avar
+tryRead avar = Fn.runFn3 _tryReadVar Nothing Just avar
 
 -- | Synchronously checks the status of an AVar.
 status :: forall a. AVar a -> Effect (AVarStatus a)
-status avar = Fn.runFn1 _status avar
+status avar = Fn.runFn4 _status Killed Filled Empty avar
 
 isEmpty :: forall a. AVarStatus a -> Boolean
 isEmpty = case _ of
@@ -106,7 +106,7 @@ foreign import _killVar :: forall a. Fn.Fn2 Error (AVar a) (Effect Unit)
 foreign import _putVar :: forall a. Fn.Fn5 (Error -> Either Error Unit) (Unit -> Either Error Unit) a (AVar a) (AVarCallback Unit) (Effect (Effect Unit))
 foreign import _tryPutVar :: forall a. Fn.Fn2 a (AVar a) (Effect Boolean)
 foreign import _takeVar :: forall a. Fn.Fn4 (Error -> Either Error a) (a -> Either Error a) (AVar a) (AVarCallback a) (Effect (Effect Unit))
-foreign import _tryTakeVar :: forall a. Fn.Fn3 (Error -> Either Error a) (a -> Either Error a) (AVar a) (Effect (Maybe a))
+foreign import _tryTakeVar :: forall a. Fn.Fn5 (Error -> Either Error a) (a -> Either Error a) (Maybe a) (a -> Maybe a) (AVar a) (Effect (Maybe a))
 foreign import _readVar :: forall a. Fn.Fn4 (Error -> Either Error a) (a -> Either Error a) (AVar a) (AVarCallback a) (Effect (Effect Unit))
-foreign import _tryReadVar :: forall a. Fn.Fn1 (AVar a) (Effect (Maybe a))
-foreign import _status :: forall a. Fn.Fn1 (AVar a) (Effect (AVarStatus a))
+foreign import _tryReadVar :: forall a. Fn.Fn3 (Maybe a) (a -> Maybe a) (AVar a) (Effect (Maybe a))
+foreign import _status :: forall a. Fn.Fn4 (Error -> AVarStatus a) (a -> AVarStatus a) (AVarStatus a) (AVar a) (Effect (AVarStatus a))
