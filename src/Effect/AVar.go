@@ -9,6 +9,12 @@ import (
 type putEntry struct {
 	val gopurs_runtime.Value
 	cb  gopurs_runtime.Value
+	canceled bool
+}
+
+type cbEntry struct {
+	cb  gopurs_runtime.Value
+	canceled bool
 }
 
 type AVarImpl struct {
@@ -18,9 +24,9 @@ type AVarImpl struct {
 	killed   bool
 	err      gopurs_runtime.Value
 	val      gopurs_runtime.Value
-	takes    []gopurs_runtime.Value
-	reads    []gopurs_runtime.Value
-	puts     []putEntry
+	takes    []*cbEntry
+	reads    []*cbEntry
+	puts     []*putEntry
 	hasLeft  bool
 	left     gopurs_runtime.Value
 	right    gopurs_runtime.Value
@@ -48,30 +54,38 @@ func drainVar(av *AVarImpl) {
 			if av.hasLeft {
 				errVal = gopurs_runtime.Apply(av.left, av.err)
 			} else {
-				// Fallback if left is not set (e.g. killed before any operations)
-				// but this shouldn't happen or we just use err?
-				// Actually, if it's killed before any ops, puts/takes/reads are empty, so it doesn't matter.
-				// If they are not empty, left MUST have been set.
 				errVal = av.err 
 			}
 
 			for len(av.puts) > 0 {
-				cb := av.puts[0].cb
+				entry := av.puts[0]
 				av.puts = av.puts[1:]
+				if entry.canceled {
+					continue
+				}
+				cb := entry.cb
 				av.mu.Unlock()
 				gopurs_runtime.Apply(gopurs_runtime.Apply(cb, errVal), gopurs_runtime.Any(nil))
 				av.mu.Lock()
 			}
 			for len(av.reads) > 0 {
-				cb := av.reads[0]
+				entry := av.reads[0]
 				av.reads = av.reads[1:]
+				if entry.canceled {
+					continue
+				}
+				cb := entry.cb
 				av.mu.Unlock()
 				gopurs_runtime.Apply(gopurs_runtime.Apply(cb, errVal), gopurs_runtime.Any(nil))
 				av.mu.Lock()
 			}
 			for len(av.takes) > 0 {
-				cb := av.takes[0]
+				entry := av.takes[0]
 				av.takes = av.takes[1:]
+				if entry.canceled {
+					continue
+				}
+				cb := entry.cb
 				av.mu.Unlock()
 				gopurs_runtime.Apply(gopurs_runtime.Apply(cb, errVal), gopurs_runtime.Any(nil))
 				av.mu.Lock()
@@ -82,29 +96,42 @@ func drainVar(av *AVarImpl) {
 		var p *putEntry
 		value := av.val
 
-		if av.isEmpty && len(av.puts) > 0 {
+		for av.isEmpty && len(av.puts) > 0 {
 			p_val := av.puts[0]
 			av.puts = av.puts[1:]
-			p = &p_val
+			if p_val.canceled {
+				continue
+			}
+			p = p_val
 			value = p.val
 			av.val = p.val
 			av.isEmpty = false
+			break
 		}
 
 		if !av.isEmpty {
 			var t gopurs_runtime.Value
 			var hasT bool
-			if len(av.takes) > 0 {
-				t = av.takes[0]
-				hasT = true
+			
+			for len(av.takes) > 0 {
+				t_entry := av.takes[0]
 				av.takes = av.takes[1:]
+				if !t_entry.canceled {
+					t = t_entry.cb
+					hasT = true
+					break
+				}
 			}
 			
 			rsize := len(av.reads)
 			for rsize > 0 && len(av.reads) > 0 {
 				rsize--
-				r := av.reads[0]
+				r_entry := av.reads[0]
 				av.reads = av.reads[1:]
+				if r_entry.canceled {
+					continue
+				}
+				r := r_entry.cb
 				av.mu.Unlock()
 				gopurs_runtime.Apply(gopurs_runtime.Apply(r, gopurs_runtime.Apply(av.right, value)), gopurs_runtime.Any(nil))
 				av.mu.Lock()
@@ -167,15 +194,15 @@ func _PutVar(left gopurs_runtime.Value, right gopurs_runtime.Value, val gopurs_r
 			av.right = right
 		}
 		
-		av.puts = append(av.puts, putEntry{val: val, cb: cb})
+		entry := &putEntry{val: val, cb: cb}
+		av.puts = append(av.puts, entry)
 		av.mu.Unlock()
 		
 		drainVar(av)
 		
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
 			av.mu.Lock()
-			// Actually we need to remove it from puts. For now we skip deleteCell logic for canceler, it's rarely used to cancel a put.
-			// Just return nil
+			entry.canceled = true
 			av.mu.Unlock()
 			return gopurs_runtime.Any(nil)
 		})
@@ -208,12 +235,16 @@ func _TakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 			av.right = right
 		}
 		
-		av.takes = append(av.takes, cb)
+		entry := &cbEntry{cb: cb}
+		av.takes = append(av.takes, entry)
 		av.mu.Unlock()
 		
 		drainVar(av)
 		
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+			av.mu.Lock()
+			entry.canceled = true
+			av.mu.Unlock()
 			return gopurs_runtime.Any(nil)
 		})
 	})
@@ -248,12 +279,17 @@ func _ReadVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 			av.left = left
 			av.right = right
 		}
-		av.reads = append(av.reads, cb)
+		
+		entry := &cbEntry{cb: cb}
+		av.reads = append(av.reads, entry)
 		av.mu.Unlock()
 		
 		drainVar(av)
 		
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
+			av.mu.Lock()
+			entry.canceled = true
+			av.mu.Unlock()
 			return gopurs_runtime.Any(nil)
 		})
 	})
