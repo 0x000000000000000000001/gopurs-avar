@@ -58,13 +58,13 @@ func _KillVar(err gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtim
 		av.mu.Unlock()
 
 		for _, cb := range takes {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
 		}
 		for _, cb := range reads {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(cb, err), gopurs_runtime.Any(nil))
 		}
 		for _, put := range puts {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(put.cb, err), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(put.cb, err), gopurs_runtime.Any(nil))
 		}
 		return gopurs_runtime.Any(nil)
 	})
@@ -78,7 +78,7 @@ func _PutVar(left gopurs_runtime.Value, right gopurs_runtime.Value, val gopurs_r
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
 			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
@@ -105,14 +105,14 @@ func _PutVar(left gopurs_runtime.Value, right gopurs_runtime.Value, val gopurs_r
 		av.mu.Unlock()
 
 		for _, r := range reads {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(r, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(r, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 		}
 
 		if hasTakeCb {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 		}
 		
-		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
+		gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
 
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 	})
@@ -142,10 +142,10 @@ func _TryPutVar(val gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runt
 		av.mu.Unlock()
 
 		for _, r := range reads {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(r, val), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(r, val), gopurs_runtime.Any(nil))
 		}
 		if hasTakeCb {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, val), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(takeCb, val), gopurs_runtime.Any(nil))
 		}
 		return gopurs_runtime.Box(true)
 	})
@@ -159,7 +159,7 @@ func _TakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
 			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
@@ -186,10 +186,10 @@ func _TakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 		av.mu.Unlock()
 
 		if hasPutCb {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
 		}
 		
-		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+		gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 	})
@@ -222,7 +222,7 @@ func _TryTakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, nothing 
 		av.mu.Unlock()
 
 		if hasPutCb {
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(putCb, gopurs_runtime.Apply(right, gopurs_runtime.Any(nil))), gopurs_runtime.Any(nil))
 		}
 
 		return gopurs_runtime.Apply(just, val)
@@ -237,7 +237,7 @@ func _ReadVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 		if av.killed {
 			e := av.err
 			av.mu.Unlock()
-			go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
+			gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(left, e)), gopurs_runtime.Any(nil))
 			return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 		}
 
@@ -250,7 +250,7 @@ func _ReadVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 		val := av.val
 		av.mu.Unlock()
 		
-		go gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
+		gopurs_runtime.Apply(gopurs_runtime.Apply(cb, gopurs_runtime.Apply(right, val)), gopurs_runtime.Any(nil))
 
 		return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value { return gopurs_runtime.Any(nil) })
 	})
