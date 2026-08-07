@@ -1,0 +1,12 @@
+--- test/Main.purs
++++ test/Main.purs
+@@ -189,7 +189,9 @@
+   c8
+   c9
+   _ <- AVar.tryPut "a" v3
+-  eq "cdfg" <$> Ref.read ref
++  actual <- Ref.read ref
++  log $ "ACTUAL IS: " <> actual
++  pure (eq "cdfg" actual)
+ 
+ main :: Effect Unit

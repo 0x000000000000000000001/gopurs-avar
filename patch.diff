@@ -1,0 +1,12 @@
+--- test/Main.purs
++++ test/Main.purs
+@@ -120,6 +120,8 @@
+       void $ Ref.modify (_ <> val') ref
+   _ <- AVar.put "foo" var $ traverse_ \_ ->
+     void $ Ref.modify (_ <> "bar") ref
+-  eq "foobazbarfoo" <$> Ref.read ref
++  actual <- Ref.read ref
++  log $ "ACTUAL IS: " <> actual
++  pure (eq "foobazbarfoo" actual)
+ 
+ test_kill_full :: Effect Unit
