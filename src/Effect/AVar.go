@@ -21,6 +21,7 @@ type AVarImpl struct {
 	takes    []gopurs_runtime.Value
 	reads    []gopurs_runtime.Value
 	puts     []putEntry
+	hasLeft  bool
 	left     gopurs_runtime.Value
 	right    gopurs_runtime.Value
 }
@@ -44,7 +45,7 @@ func drainVar(av *AVarImpl) {
 	for {
 		if av.killed {
 			var errVal gopurs_runtime.Value
-			if av.left != nil {
+			if av.hasLeft {
 				errVal = gopurs_runtime.Apply(av.left, av.err)
 			} else {
 				// Fallback if left is not set (e.g. killed before any operations)
@@ -92,8 +93,10 @@ func drainVar(av *AVarImpl) {
 
 		if !av.isEmpty {
 			var t gopurs_runtime.Value
+			var hasT bool
 			if len(av.takes) > 0 {
 				t = av.takes[0]
+				hasT = true
 				av.takes = av.takes[1:]
 			}
 			
@@ -107,8 +110,7 @@ func drainVar(av *AVarImpl) {
 				av.mu.Lock()
 			}
 			
-			if t != nil {
-				av.val = nil
+			if hasT {
 				av.isEmpty = true
 				av.mu.Unlock()
 				gopurs_runtime.Apply(gopurs_runtime.Apply(t, gopurs_runtime.Apply(av.right, value)), gopurs_runtime.Any(nil))
@@ -142,10 +144,9 @@ func _KillVar(err gopurs_runtime.Value, avar gopurs_runtime.Value) gopurs_runtim
 	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
 		av := unboxAVar(avar)
 		av.mu.Lock()
-		if av.err == nil {
+		if !av.killed {
 			av.err = err
 			av.killed = true
-			av.val = nil
 			av.isEmpty = true
 			av.mu.Unlock()
 			drainVar(av)
@@ -160,7 +161,8 @@ func _PutVar(left gopurs_runtime.Value, right gopurs_runtime.Value, val gopurs_r
 	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
 		av := unboxAVar(avar)
 		av.mu.Lock()
-		if av.left == nil {
+		if !av.hasLeft {
+			av.hasLeft = true
 			av.left = left
 			av.right = right
 		}
@@ -200,7 +202,8 @@ func _TakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
 		av := unboxAVar(avar)
 		av.mu.Lock()
-		if av.left == nil {
+		if !av.hasLeft {
+			av.hasLeft = true
 			av.left = left
 			av.right = right
 		}
@@ -227,7 +230,6 @@ func _TryTakeVar(left gopurs_runtime.Value, right gopurs_runtime.Value, nothing 
 		}
 		
 		val := av.val
-		av.val = nil
 		av.isEmpty = true
 		av.mu.Unlock()
 		
@@ -241,7 +243,8 @@ func _ReadVar(left gopurs_runtime.Value, right gopurs_runtime.Value, avar gopurs
 	return gopurs_runtime.Func(func(_ gopurs_runtime.Value) gopurs_runtime.Value {
 		av := unboxAVar(avar)
 		av.mu.Lock()
-		if av.left == nil {
+		if !av.hasLeft {
+			av.hasLeft = true
 			av.left = left
 			av.right = right
 		}
