@@ -25,7 +25,7 @@ echo "=== Building project with spago ==="
 spago build || { echo "Spago build failed"; exit 1; }
 
 echo "=== Generating Go code with gopurs ==="
-node --max-old-space-size=8192 --stack-size=65536 ../gopurs/bin/gopurs.js --main Test.Main || exit 1
+../gopurs/bin/gopurs --main Test.Main || exit 1
 
 echo "=== Compiling and running Go test binary ==="
 if [ -d "output/main" ]; then
