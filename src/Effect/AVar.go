@@ -151,7 +151,7 @@ func drainVar(av *AVarImpl) {
 			av.mu.Lock()
 		}
 
-		if (av.isEmpty && len(av.puts) == 0) || (!av.isEmpty && len(av.takes) == 0) {
+		if (av.isEmpty && len(av.puts) == 0) || (!av.isEmpty && len(av.takes) == 0 && len(av.reads) == 0) {
 			break
 		}
 	}
