@@ -16,7 +16,7 @@ if [ "$CLEAN" == "1" ]; then
 fi
 
 # Remove cache for safety
-rm -rf output .spago .cache ../gopurs-*/output ../gopurs-*/.spago ../gopurs-*/.cache
+rm -rf output .spago .cache
 
 rm -f spago.yaml
 ln -s spago.go.yaml spago.yaml
